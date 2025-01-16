@@ -5,16 +5,18 @@ format:
     grid:
       body-width: 1000px
 theme: cosmo
+fig-width: 6
+fig-asp: 0.618
 lightbox: true
 execute: 
-  echo: false
+  echo: true
   message: false
   warning: false
 ---
 
-## 1) Récupérer et examiner les données 
+## Questions 1, 2 et 3
 
-### Récupérer les données
+## Récupérer les données
 
 ```{r}
 #| label: package-import-seed
@@ -32,39 +34,89 @@ set.seed(123)
 
 ```
 
-### Examiner les données
+## Indicateurs au global 
 
-Nous pouvons voir @fig-visuglob que le nombre de sinistres augmente avec les années, ainsi que le nombre de polices sinistrées. La croissance est plus importante pour ce dernier, engendrant une augmentation du nombre de sinistre moyen par police sinistrée. Le nombre de sinistre moyen par police augmente mécaniquement du fait que le nombre de polices est fixe.
+Les données sont réparties sur 3 années consécutives et représentent la sinistralité d'un portefeuille de 100 000 polices sans entrée ni sortie. 
+@fig-kpiglob présente les indicateurs sans distinction sur les années. Sur trois ans, plus d'un tier des polices ont eu au moins un sinistre.  
 
 ```{r}
-#| label: fig-visuglob
+#| label: fig-kpiglob
+#| column: page
 
-kpi_annee <- data |> 
-  summarise(
-    nb_police = 100000,
-    nb_sin = n(),
-    nb_police_sinistree = length(unique(num_police)), .by = annee) |> 
-  mutate(
-    nb_sin_moy_police = nb_sin/nb_police,
-    nb_sin_moy_police_sinistree = nb_sin/nb_police_sinistree)
+fun_kpi <- function(data, group = NULL){
+  data |> 
+    summarise(
+      nb_police = 100000,
+      nb_sin = n(),
+      cout_total = sum(cout_sin),
+      nb_police_sinistree = length(unique(num_police)), 
+      .by = {{group}}) |> 
+    mutate(
+      nb_sin_moy_police = nb_sin/nb_police,
+      nb_sin_moy_police_sinistree = nb_sin/nb_police_sinistree,
+      cout_moyen_sinistre = cout_total/nb_sin,
+      cout_moyen_police_sinistree = cout_total/nb_police_sinistree,
+      cout_moyen_police = cout_total/nb_police,
+      )
+}
+
+helper <- function(type, name){
+  
+  switch (type,
+    string = colDef(name = name),
+    nb_int = colDef(name = name, format = colFormat(separators = TRUE)),
+    nb_cur = colDef(name = name, format = colFormat(separators = TRUE, currency = "EUR")),
+    nb_float = colDef(name = name, format = colFormat(digits = 3))
+    
+  )
+}
 
 
-reactable(kpi_annee, 
-          columns = list(
-            annee = colDef(name = "Année"),
-            nb_police = colDef(name = "Nombre de polices", format = colFormat(separators = TRUE)),
-            nb_sin = colDef(name = "Nombre de sinistres", format = colFormat(separators = TRUE)),
-            nb_police_sinistree = colDef(name = "Nombre de polices sinistrées", format = colFormat(separators = TRUE)),
-            nb_sin_moy_police = colDef(name = "Nombre de sinistre moyen par police", format = colFormat(digits = 3)),
-            nb_sin_moy_police_sinistree = colDef(name = "Nombre de sinistre moyen par police sinistrée", format = colFormat(digits = 3))
-                           )
-          )
+render_react_cols <- function(data, type_name){
+  
+  list <- imap(type_name, \(x, idx) helper(idx, x))
+  
+  setNames(list, names(data))
+  
+}
+
+
+kpi_glob <- fun_kpi(data)
+
+
+cols <- c("Nombre de polices", "Nombre de sinistres", "Coût Total", "Nombre de polices sinistrées", "Nombre de sinistres moyen par police",
+                "Nombre de sinistres moyen par police sinistrée", "Coût moyen d'un sinistre", "Coût moyen par police sinistrée", "Coût moyen par police")
+
+names(cols) <- c(rep("nb_int", 2), "nb_cur", "nb_int", rep("nb_float", 5))
+
+
+reactable(kpi_glob, columns = render_react_cols(kpi_glob, cols))
+
+
 ```
+
+
+## Indicateurs par année
+
+@fig-kpiannee présente les indicateurs clés par année. Le nombre de sinistres augmente avec les années, ainsi que le nombre de polices sinistrées. La croissance est plus importante pour ce dernier, engendrant une augmentation du nombre de sinistre moyen par police sinistrée. Le nombre de sinistre moyen par police augmente mécaniquement du fait que le nombre de polices est fixe.
+Le coût moyen d'un sinistre diminue en année 2 puis augmente en année en année 3 mais reste en dessous de l'année 1. Cependant le coût moyen par police sinistrée est croissant avec les années. 
+
+```{r}
+#| label: fig-kpiannee
+#| column: page
+
+kpi_annee <- fun_kpi(data, annee)
+
+cols2 <- c("string" = "Année", cols)
+
+reactable(kpi_annee, render_react_cols(kpi_annee, cols2))
+
+```
+
+
 
 ```{r}
 #| label: fig-visuglob-plot
-#| fig-width: 6
-#| fig-asp: 0.618
 #| fig-cap: "Evolution des indicateurs"
 #| fig-subcap: 
 #|  - "Nombre de sinistres par année"
@@ -115,6 +167,33 @@ plot_kpi(kpi_annee, nb_sin_moy_police_sinistree,
 ```
 
 ```{r}
+#| label: fig-cout
+#| layout-ncol: 2
+
+
+plot_kpi(kpi_annee, cout_total, 
+         line_args = list(color = "blue", linewidth = 0.75),
+         point_args = list(color = "red", size = 2), 
+         labs_args = list(x = "Année", y = "Coût total"))
+
+plot_kpi(kpi_annee, cout_moyen_sinistre, 
+         line_args = list(color = "blue", linewidth = 0.75),
+         point_args = list(color = "red", size = 2), 
+         labs_args = list(x = "Année", y = "Coût moyen d'un sinistre"))
+
+plot_kpi(kpi_annee, cout_moyen_police_sinistree, 
+         line_args = list(color = "blue", linewidth = 0.75),
+         point_args = list(color = "red", size = 2), 
+         labs_args = list(x = "Année", y = "Coût moyen par police sinistrée"))
+
+plot_kpi(kpi_annee, cout_moyen_police, 
+         line_args = list(color = "blue", linewidth = 0.75),
+         point_args = list(color = "red", size = 2), 
+         labs_args = list(x = "Année", y = "Coût moyen par police"))
+```
+
+
+```{r}
 #| label: police-risque
 
 police_a_risque <- data |> 
@@ -134,6 +213,25 @@ Il y a **`r format_n(nb_police_a_risque)`** polices qui peuvent être considér�
 
 ## 2) Examiner la distribution empirique 
 
+On crée une nouvelle dataframe pour prendre en considération les polices non sinistrées.
+
+```{r}
+distrib_kpi <- function(data, variable, list){
+  
+  kpi_without_zero <- data |> 
+    summarise(
+      nb_sin = n(),
+      cout_moyen = mean(cout_sin), 
+      .by = {{variable}}
+      )
+  
+  kpi_with_zero <- expand_grid(list) |> 
+    left_join(kpi_without_zero, by = c("annee", "num_police")) |> 
+    replace_na(list(nb_sin = 0, cout_moyen = 0))
+  
+}
+```
+
 
 ```{r}
 #| label: kpi
@@ -151,8 +249,40 @@ kpi_with_zero <- expand_grid(annee = c("Année 1", "Année 2", "Année 3"), num_
   replace_na(list(nb_sin = 0, cout_moyen = 0))
 ```
 
+### Au global 
+
 ```{r}
-#| label: fig-kpi
+#| label: fig-kpi1
+#| fig-cap: "Distribution du nombre et du coût moyen des sinistres par police"
+#| fig-subcap: 
+#|  - "Distribution du nombre de sinistres"
+#|  - "Distribution du coût moyen par année"
+
+kpi_with_zero |> 
+  ggplot(aes(x = nb_sin)) +
+  scale_y_log10(breaks = scales::breaks_log(n = 10), labels = scales::label_number_auto()) + 
+  geom_bar(position = "dodge", fill = "skyblue", color = "darkblue", alpha = 0.7) +
+  labs(x = "Nombre de sinistre",
+       y = "Nombre de police (log10)",
+       fill = NULL) +
+  theme_hc() 
+
+
+kpi_without_zero |>
+  ggplot(aes(x = cout_moyen)) +
+  geom_histogram(fill = "skyblue", color = "darkblue", alpha = 0.7, bins = 100) +
+  scale_y_log10() +
+  scale_x_log10() + 
+  labs(x = "Coût moyen (log10)",
+       y = "Nombre de police (log10)") +
+  theme_hc()
+``` 
+
+### En distinguant par année
+
+
+```{r}
+#| label: fig-kpi2
 #| fig-cap: "Distribution du nombre et du coût moyen des sinistres par police"
 #| fig-subcap: 
 #|  - "Distribution du nombre de sinistres"
@@ -171,11 +301,42 @@ kpi_with_zero |>
 kpi_without_zero |>
   ggplot(aes(x = cout_moyen)) +
   facet_wrap(vars(annee), ncol = 1, scales = "free_y") +
-  geom_histogram(bins = 100, fill = "skyblue", color = "darkblue", alpha = 0.7) +
+  geom_histogram(fill = "skyblue", color = "darkblue", alpha = 0.7, bins = 100) +
   scale_y_log10() +
-  scale_x_continuous(breaks = scales::pretty_breaks(n = 10), limits = c(0, 15000)) + 
+  scale_x_log10() + 
   labs(x = "Coût moyen (log10)",
-       y = "Nombre de police") +
-  theme_hc()
+       y = "Nombre de police (log10)") +
+  theme_hc() + 
+  theme(strip.background=element_rect(colour="black", fill="white"))
+```
+
+## Modèle pour la fréquence 
+
+Nous pouvons lire @fig-coutmoy que sur le portefeuille au global, sans distinction par année et en prenant en compte les polices non sinitrées, la moyenne et la variance empiriques du nombre de sinistres sont quasiments identiques. Nous pouvons alors supposer que la variable aléatoire représentant le nombre de sinistres suit une loi de poisson dont le paramètre est estimé par la moyenne empirique. 
+
+```{r}
+#| label: fig-coutmoykpi
+
+kpi_with_zero |> 
+  summarise(nb_sin_moy = mean(nb_sin),
+            nb_sin_var = var(nb_sin)
+            ) |> 
+  reactable(list(
+    nb_sin_moy = colDef(name = "Moyenne empirique du nombre de sinistres", format = colFormat(digits = 3)),
+    nb_sin_var = colDef(name = "Variance empirique du nombre de sinistres", format = colFormat(digits = 3))
+  ))
+  
+```
+
+
+```{r}
+
+library(fitdistrplus)
+
+# Ajuster une loi Gamma aux données
+ajustement_gamma <- fitdist(kpi_without_zero$cout_moyen - min(kpi_without_zero$cout_moyen), "gamma")
+
+plot(ajustement_gamma)
+
 ```
 
